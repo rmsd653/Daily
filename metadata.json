@@ -1,0 +1,6 @@
+{
+  "name": "Offline Task Manager",
+  "description": "An offline-first Progressive Web App for advanced localized task management, featuring automatic rollover, recurrence generation, and customizable reminders.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,18 @@
+{
+  "name": "Offline Task Manager",
+  "short_name": "Tasks PWA",
+  "description": "Progressive Web App for advanced offline task management, recurring routines, and manual deferrals with automated rollover.",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

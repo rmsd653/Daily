@@ -1,0 +1,124 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+@import "tailwindcss";
+
+:root {
+  --app-bg: #090d16;
+  --app-text: #f1f5f9;
+  --app-muted: #94a3b8;
+  --app-bold: #ffffff;
+  --app-card: #0f172a;
+  --app-border: #1e293b;
+  --app-hdr-bg: rgba(9, 13, 22, 0.85);
+  --app-hdr-bdr: #0f172a;
+  --app-input: #090d16;
+  --app-input-bdr: #1e293b;
+  --app-panel: rgba(15, 23, 42, 0.4);
+  --app-panel-bdr: #0f172a;
+}
+
+.light {
+  --app-bg: #f8fafc;
+  --app-text: #334155;
+  --app-muted: #64748b;
+  --app-bold: #0f172a;
+  --app-card: #ffffff;
+  --app-border: #e2e8f0;
+  --app-hdr-bg: rgba(255, 255, 255, 0.85);
+  --app-hdr-bdr: #e2e8f0;
+  --app-input: #ffffff;
+  --app-input-bdr: #cbd5e1;
+  --app-panel: rgba(241, 245, 249, 0.6);
+  --app-panel-bdr: #e2e8f0;
+}
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-display: "Space Grotesk", sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
+
+  /* Custom animations */
+  --animate-pulse-slow: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+
+  /* Theme mappings mapped to Tailwind v4 variables */
+  --color-app-bg: var(--app-bg);
+  --color-app-text: var(--app-text);
+  --color-app-muted: var(--app-muted);
+  --color-app-bold: var(--app-bold);
+  --color-app-card: var(--app-card);
+  --color-app-border: var(--app-border);
+  --color-app-hdr-bg: var(--app-hdr-bg);
+  --color-app-hdr-bdr: var(--app-hdr-bdr);
+  --color-app-input: var(--app-input);
+  --color-app-input-bdr: var(--app-input-bdr);
+  --color-app-panel: var(--app-panel);
+  --color-app-panel-bdr: var(--app-panel-bdr);
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: var(--app-bg);
+  color: var(--app-text);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  transition: background-color 0.2s cubic-bezier(0.4, 0, 0.2, 1), color 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Custom scrollbars for a highly polished UI design */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--app-bg);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--app-border);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #14b8a6;
+}
+
+.custom-checkbox {
+  appearance: none;
+  background-color: var(--app-input);
+  margin: 0;
+  font: inherit;
+  color: #14b8a6;
+  width: 1.25em;
+  height: 1.25em;
+  border: 1.5px solid var(--app-input-bdr);
+  border-radius: 0.25em;
+  transform: translateY(-0.075em);
+  display: inline-grid;
+  place-content: center;
+  cursor: pointer;
+  transition: all 150ms ease-in-out;
+}
+
+.custom-checkbox::before {
+  content: "";
+  width: 0.65em;
+  height: 0.65em;
+  transform: scale(0);
+  transition: 120ms transform ease-in-out;
+  background-color: #14b8a6;
+  clip-path: polygon(14% 44%, 0 49%, 47% 95%, 100% 15%, 88% 7%, 42% 70%);
+}
+
+.custom-checkbox:checked {
+  border-color: #14b8a6;
+  background-color: #0f272a;
+}
+
+.custom-checkbox:checked::before {
+  transform: scale(1);
+}
+
+.custom-checkbox:focus {
+  outline: 2px solid #14b8a6;
+  outline-offset: 2px;
+}
