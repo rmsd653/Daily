@@ -49,21 +49,43 @@ export function addMonthToDate(dateStr: string): string {
 }
 
 // -------------------------------------------------------------
+// Safe UUID Engine fallback (avoiding restrictions in iframe sandboxes)
+// -------------------------------------------------------------
+export function getSafeUUID(): string {
+  try {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return crypto.randomUUID();
+    }
+  } catch (e) {
+    // Ignore sandbox errors
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
+// -------------------------------------------------------------
 // Background Notification & Alarm Scheduling Engine
 // -------------------------------------------------------------
 
 // Ask for notification permission if needed
 export async function requestNotificationPermission(): Promise<boolean> {
-  if (!('Notification' in window)) {
-    console.warn('This browser does not support browser system notifications.');
-    return false;
-  }
-  if (Notification.permission === 'granted') {
-    return true;
-  }
-  if (Notification.permission !== 'denied') {
-    const permission = await Notification.requestPermission();
-    return permission === 'granted';
+  try {
+    if (!('Notification' in window) || typeof Notification === 'undefined') {
+      console.warn('This browser does not support browser system notifications.');
+      return false;
+    }
+    if (Notification.permission === 'granted') {
+      return true;
+    }
+    if (Notification.permission !== 'denied') {
+      const permission = await Notification.requestPermission();
+      return permission === 'granted';
+    }
+  } catch (err) {
+    console.warn('Notification permission query blocked or threw an error:', err);
   }
   return false;
 }
@@ -107,18 +129,22 @@ export function fireSystemNotification(taskId: string, title: string, remark?: s
   }
 
   // 2. System level OS notification
-  if ('Notification' in window && Notification.permission === 'granted') {
-    const notification = new Notification(`Task Reminder: ${title}`, {
-      body: remark || "You have a task scheduled for now!",
-      icon: '/icon.svg',
-      tag: taskId,
-      requireInteraction: true
-    });
+  try {
+    if ('Notification' in window && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+      const notification = new Notification(`Task Reminder: ${title}`, {
+        body: remark || "You have a task scheduled for now!",
+        icon: '/icon.svg',
+        tag: taskId,
+        requireInteraction: true
+      });
 
-    notification.onclick = () => {
-      window.focus();
-      notification.close();
-    };
+      notification.onclick = () => {
+        window.focus();
+        notification.close();
+      };
+    }
+  } catch (err) {
+    console.warn('Notification instantiation failed or blocked:', err);
   }
 
   // 3. Attempt service worker notification fallback (for background/closed triggers)
@@ -153,14 +179,14 @@ export async function createTask(
   custom_gap_days?: number
 ): Promise<Task> {
   const now = new Date().toISOString();
-  const taskId = crypto.randomUUID();
+  const taskId = getSafeUUID();
   let recurring_template_id: string | undefined = undefined;
 
   // Validate custom gap
   const gap = frequency === 'custom_gap' ? Math.max(1, custom_gap_days || 1) : undefined;
 
   if (frequency !== 'none') {
-    const templateId = crypto.randomUUID();
+    const templateId = getSafeUUID();
     const template: RecurringTemplate = {
       id: templateId,
       title,
@@ -230,7 +256,7 @@ export async function completeTask(taskId: string): Promise<string | null> {
 
       if (nextDate) {
         nextTaskDate = nextDate;
-        const nextTaskId = crypto.randomUUID();
+        const nextTaskId = getSafeUUID();
         const nextTask: Task = {
           id: nextTaskId,
           title: template.title,

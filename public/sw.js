@@ -66,7 +66,8 @@ self.addEventListener('fetch', (event) => {
           })
           .catch(() => {
             // Offline fallbacks - if an HTML request, fallback to root
-            if (event.request.headers.get('accept').includes('text/html')) {
+            const acceptHeader = event.request.headers.get('accept');
+            if (acceptHeader && acceptHeader.includes('text/html')) {
               return caches.match('/');
             }
           });
@@ -82,7 +83,7 @@ self.addEventListener('message', (event) => {
     
     // Check if the Notification Triggers API is available or register custom trigger
     // Since experimental triggers require chromium config, we also allow immediate or post-fallback triggers
-    if ('showTrigger' in Notification.prototype) {
+    if (typeof Notification !== 'undefined' && Notification.prototype && 'showTrigger' in Notification.prototype) {
       // In advanced browsers, schedule notification trigger locally
       self.registration.showNotification(title, {
         ...options,

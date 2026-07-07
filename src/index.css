@@ -2,33 +2,33 @@
 @import "tailwindcss";
 
 :root {
-  --app-bg: #090d16;
-  --app-text: #f1f5f9;
-  --app-muted: #94a3b8;
-  --app-bold: #ffffff;
-  --app-card: #0f172a;
-  --app-border: #1e293b;
-  --app-hdr-bg: rgba(9, 13, 22, 0.85);
-  --app-hdr-bdr: #0f172a;
-  --app-input: #090d16;
-  --app-input-bdr: #1e293b;
-  --app-panel: rgba(15, 23, 42, 0.4);
-  --app-panel-bdr: #0f172a;
+  --app-bg: #101714; /* Cozy deep midnight spruce */
+  --app-text: #cbdad1; /* Soft sage grey */
+  --app-muted: #799183; /* Peaceful pine-green muted tone */
+  --app-bold: #eef3f0; /* Crisp soft white-green */
+  --app-card: #16201b; /* Calming sage forest card background */
+  --app-border: #24352a; /* Subtle undergrowth pine border */
+  --app-hdr-bg: rgba(16, 23, 20, 0.85);
+  --app-hdr-bdr: #16201b;
+  --app-input: #101714;
+  --app-input-bdr: #24352a;
+  --app-panel: rgba(22, 32, 27, 0.6);
+  --app-panel-bdr: #24352a;
 }
 
 .light {
-  --app-bg: #f8fafc;
-  --app-text: #334155;
-  --app-muted: #64748b;
-  --app-bold: #0f172a;
-  --app-card: #ffffff;
-  --app-border: #e2e8f0;
-  --app-hdr-bg: rgba(255, 255, 255, 0.85);
-  --app-hdr-bdr: #e2e8f0;
+  --app-bg: #f3f6f4; /* Heavenly soft warm sage-clay off-white */
+  --app-text: #2f4339; /* Elegant deep spruce-green */
+  --app-muted: #5e7769; /* Peaceful leafy green-grey */
+  --app-bold: #1c2b23; /* Dark earthy forest spruce */
+  --app-card: #ffffff; /* pure, premium organic white paper card */
+  --app-border: #dae3de; /* Soft light mist sageborder */
+  --app-hdr-bg: rgba(243, 246, 244, 0.85);
+  --app-hdr-bdr: #dae3de;
   --app-input: #ffffff;
-  --app-input-bdr: #cbd5e1;
-  --app-panel: rgba(241, 245, 249, 0.6);
-  --app-panel-bdr: #e2e8f0;
+  --app-input-bdr: #c7d4cd;
+  --app-panel: rgba(218, 227, 222, 0.4);
+  --app-panel-bdr: #dae3de;
 }
 
 @theme {
