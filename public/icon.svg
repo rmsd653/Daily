@@ -1,21 +1,46 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
   <defs>
-    <linearGradient id="b" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#14b8a6"/>
-      <stop offset="100%" stop-color="#0f766e"/>
+    <!-- Background Gradient -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f172a"/>
+      <stop offset="50%" stop-color="#1e293b"/>
+      <stop offset="100%" stop-color="#0f172a"/>
     </linearGradient>
-    <linearGradient id="g" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" stop-color="#334155"/>
-      <stop offset="100%" stop-color="#1e293b"/>
+    
+    <!-- Outer Ring Gradient -->
+    <linearGradient id="ringGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#2dd4bf"/> <!-- teal-400 -->
+      <stop offset="60%" stop-color="#0d9488"/> <!-- teal-600 -->
+      <stop offset="100%" stop-color="#0f766e"/> <!-- teal-700 -->
     </linearGradient>
+    
+    <!-- Checkmark Gradient -->
+    <linearGradient id="accentGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#38bdf8"/> <!-- sky-400 -->
+      <stop offset="100%" stop-color="#2dd4bf"/> <!-- teal-400 -->
+    </linearGradient>
+
+    <!-- Drop Shadow Filter for Depth -->
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#000000" flood-opacity="0.5"/>
+    </filter>
   </defs>
-  <!-- Background with subtle corner rounding -->
-  <rect width="512" height="512" rx="128" fill="url(#g)"/>
-  <!-- Decorative abstract lines -->
-  <rect x="96" y="96" width="320" height="320" rx="32" fill="#0f172a" opacity="0.4"/>
-  <!-- Calendar representation ticks -->
-  <rect x="160" y="64" width="48" height="96" rx="24" fill="url(#b)"/>
-  <rect x="304" y="64" width="48" height="96" rx="24" fill="url(#b)"/>
-  <!-- Checkmark Graphic -->
-  <path d="M150 280 l70 70 140 -140" fill="none" stroke="url(#b)" stroke-width="48" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Base Dark Canvas Card (Rounded Container matching Apple-style icons) -->
+  <rect width="512" height="512" rx="112" fill="url(#bgGrad)"/>
+  
+  <!-- Subtle circular grid behind -->
+  <circle cx="256" cy="256" r="190" fill="none" stroke="#334155" stroke-width="2" stroke-dasharray="8 8" opacity="0.3"/>
+
+  <!-- Glowing Circular Routine Progress Dial (resembles completing the day) -->
+  <circle cx="256" cy="256" r="140" fill="none" stroke="url(#ringGrad)" stroke-width="28" stroke-linecap="round" stroke-dasharray="660 880" transform="rotate(-90 256 256)" filter="url(#shadow)"/>
+  
+  <!-- Inner Dynamic Progress Arc Dot / Milestone representing a target reached -->
+  <circle cx="256" cy="116" r="14" fill="#2dd4bf" filter="url(#shadow)"/>
+  
+  <!-- Geometric Stylized Checkmark Element inside the loop -->
+  <g filter="url(#shadow)">
+    <!-- Elegant minimal checkmark representing success and routine accomplishment -->
+    <path d="M190 256 l48 48 l100 -100" fill="none" stroke="url(#accentGrad)" stroke-width="32" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
 </svg>

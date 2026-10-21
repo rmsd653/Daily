@@ -3,6 +3,7 @@ import {
   CheckCircle2, 
   Circle, 
   ChevronRight, 
+  ChevronLeft,
   Calendar, 
   Clock, 
   Trash2, 
@@ -22,7 +23,11 @@ import {
   Check,
   List,
   CalendarCheck,
-  Notebook
+  Notebook,
+  Activity,
+  CalendarDays,
+  TrendingUp,
+  BarChart2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
@@ -36,9 +41,14 @@ import {
   getLocalTodayDate,
   addDaysToDate,
   requestNotificationPermission,
-  fireSystemNotification
+  fireSystemNotification,
+  createRoutine,
+  toggleRoutineInstance,
+  deleteRoutine,
+  syncRoutinesForDateRange,
+  getDatesBetween
 } from './db';
-import { Task, TaskStatus, RecurrenceFrequency } from './types';
+import { Task, TaskStatus, RecurrenceFrequency, Routine, RoutineInstance } from './types';
 
 export default function App() {
   // PWA & Environment State
@@ -77,9 +87,41 @@ export default function App() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [rolloverCount, setRolloverCount] = useState<number>(0);
   const [showRolloverToast, setShowRolloverToast] = useState<boolean>(false);
+
+  // Routines Store State
+  const [routines, setRoutines] = useState<Routine[]>([]);
+  const [routineInstances, setRoutineInstances] = useState<RoutineInstance[]>([]);
+  const [newRoutineTitle, setNewRoutineTitle] = useState<string>('');
   
+  // Date selection state for "My Day" view
+  const [selectedDate, setSelectedDate] = useState<string>(getLocalTodayDate());
+
+  // Convert date string to tab labels (yesterday, today, tomorrow, or short date)
+  const getTabLabel = (dateStr: string) => {
+    const today = getLocalTodayDate();
+    if (dateStr === today) return "TODAY";
+    if (dateStr === addDaysToDate(today, -1)) return "YESTERDAY";
+    if (dateStr === addDaysToDate(today, 1)) return "TOMORROW";
+    
+    // Format other dates beautifully as (Date)
+    const [yr, mo, dy] = dateStr.split('-').map(Number);
+    const d = new Date(yr, mo - 1, dy);
+    const weekday = d.toLocaleDateString('en-US', { weekday: 'short' });
+    const month = d.toLocaleDateString('en-US', { month: 'short' });
+    const dayNum = d.getDate();
+    return `${weekday}, ${month} ${dayNum}`;
+  };
+
+  // Convert date string to a pretty long calendar date label
+  const getFormattedPrettyDate = (dateStr: string) => {
+    const [yr, mo, dy] = dateStr.split('-').map(Number);
+    const d = new Date(yr, mo - 1, dy);
+    const opts: Intl.DateTimeFormatOptions = { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' };
+    return d.toLocaleDateString('en-US', opts);
+  };
+
   // Navigation: Microsoft Tasks style layout
-  const [activeTab, setActiveTab] = useState<'today' | 'planned' | 'completed' | 'cancelled' | 'all'>('today');
+  const [activeTab, setActiveTab] = useState<'today' | 'planned' | 'completed' | 'cancelled' | 'all' | 'routines'>('today');
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(true);
 
   // Selected Task for right detail pane drawer orientation
@@ -126,6 +168,7 @@ export default function App() {
         console.error('Error conducting rollover engine:', err);
       }
       await reloadTasks();
+      await reloadRoutines();
     }
     initializeApp();
   }, [activeTab]);
@@ -177,6 +220,18 @@ export default function App() {
     }
   };
 
+  const reloadRoutines = async () => {
+    try {
+      await syncRoutinesForDateRange();
+      const allRoutines = await db.routines.toArray();
+      const allInstances = await db.routine_instances.toArray();
+      setRoutines(allRoutines);
+      setRoutineInstances(allInstances);
+    } catch (err) {
+      console.error('Failed to load routines from local store:', err);
+    }
+  };
+
   const triggerToast = (msg: string) => {
     setToastMessage(msg);
     setTimeout(() => {
@@ -200,9 +255,10 @@ export default function App() {
     if (!newTitle.trim()) return;
 
     try {
+      const targetDateToUse = activeTab === 'today' ? selectedDate : newTargetDate;
       await createTask(
         newTitle.trim(),
-        newTargetDate,
+        targetDateToUse,
         '', // Starts with empty remark (type note in details pane)
         newReminderTime || undefined,
         'pending',
@@ -220,6 +276,65 @@ export default function App() {
     } catch (err) {
       console.error(err);
       triggerToast('Error inserting task.');
+    }
+  };
+
+  // -------------------------------------------------------------
+  // Routines Action Handlers
+  // -------------------------------------------------------------
+  const handleCreateRoutine = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newRoutineTitle.trim()) return;
+
+    try {
+      await createRoutine(newRoutineTitle);
+      triggerToast('✓ New daily routine registered!');
+      setNewRoutineTitle('');
+      await reloadRoutines();
+    } catch (err) {
+      console.error(err);
+      triggerToast('Error creating routine.');
+    }
+  };
+
+  const handleToggleRoutine = async (routineId: string, currentStatus: 'completed' | 'skipped' | 'pending', targetDate: string = getLocalTodayDate()) => {
+    try {
+      let nextStatus: 'completed' | 'skipped' | 'pending' = 'completed';
+      if (currentStatus === 'completed') {
+        nextStatus = 'pending';
+      } else if (currentStatus === 'pending') {
+        nextStatus = 'completed';
+      }
+      
+      await toggleRoutineInstance(routineId, targetDate, nextStatus);
+      triggerToast(nextStatus === 'completed' ? '✓ Routine completed!' : 'Routine set back to pending.');
+      await reloadRoutines();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleSkipRoutine = async (routineId: string, currentStatus: 'completed' | 'skipped' | 'pending', targetDate: string = getLocalTodayDate()) => {
+    try {
+      const nextStatus = currentStatus === 'skipped' ? 'pending' : 'skipped';
+      await toggleRoutineInstance(routineId, targetDate, nextStatus);
+      triggerToast(nextStatus === 'skipped' ? '✓ Routine skipped.' : 'Routine set back to pending.');
+      await reloadRoutines();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleDeleteRoutineId = async (routineId: string) => {
+    if (!window.confirm("Are you sure you want to permanently delete this routine and all its historical logs?")) {
+      return;
+    }
+    try {
+      await deleteRoutine(routineId);
+      triggerToast('🗑 Routine deleted permanently.');
+      await reloadRoutines();
+    } catch (err) {
+      console.error(err);
     }
   };
 
@@ -313,7 +428,7 @@ export default function App() {
 
     // 2. Tab segment filters matching Microsoft Task standard
     if (activeTab === 'today') {
-      return t.target_date === todayDateString && (t.status === 'pending' || t.status === 'on_hold');
+      return t.target_date === selectedDate && (t.status === 'pending' || t.status === 'on_hold');
     }
     if (activeTab === 'planned') {
       return t.target_date > todayDateString && (t.status === 'pending' || t.status === 'on_hold');
@@ -340,6 +455,58 @@ export default function App() {
   // Selected object properties for detail panel mapping
   const selectedTaskObj = tasks.find(t => t.id === selectedTaskId) || null;
 
+  // Helper to calculate completion statistics for a routine or combined (weekly/monthly/yearly)
+  const calculateRoutineStats = (routineId: string | null, daysCount: number) => {
+    const today = getLocalTodayDate();
+    const startDate = addDaysToDate(today, -daysCount + 1);
+    const dates = getDatesBetween(startDate, today);
+
+    let totalOpportunities = 0;
+    let completedCount = 0;
+    let skippedCount = 0;
+    let pendingCount = 0;
+
+    const targetRoutines = routineId
+      ? routines.filter(r => r.id === routineId)
+      : routines;
+
+    for (const r of targetRoutines) {
+      for (const d of dates) {
+        if (d >= r.start_date) {
+          totalOpportunities++;
+          const inst = routineInstances.find(i => i.routine_id === r.id && i.date === d);
+          if (inst) {
+            if (inst.status === 'completed') {
+              completedCount++;
+            } else if (inst.status === 'skipped') {
+              skippedCount++;
+            } else {
+              pendingCount++;
+            }
+          } else {
+            if (d === today) {
+              pendingCount++;
+            } else {
+              skippedCount++;
+            }
+          }
+        }
+      }
+    }
+
+    const completedRate = totalOpportunities > 0
+      ? Math.round((completedCount / totalOpportunities) * 100)
+      : 0;
+
+    return {
+      total: totalOpportunities,
+      completed: completedCount,
+      skipped: skippedCount,
+      pending: pendingCount,
+      completedRate
+    };
+  };
+
   // Pretty calendar date indicator string
   const getTodayPrettyLabel = () => {
     const d = new Date();
@@ -365,7 +532,7 @@ export default function App() {
             <div className="flex items-center gap-2">
               <span className="w-2.5 h-2.5 rounded-full bg-teal-500 animate-pulse" />
               <h1 className="font-display font-medium text-base text-app-bold tracking-tight">
-                Offline Task Core
+                Daily
               </h1>
             </div>
           </div>
@@ -507,6 +674,25 @@ export default function App() {
                   )}
                 </button>
 
+                <button
+                  onClick={() => { setActiveTab('routines'); setSelectedTaskId(null); }}
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition-all cursor-pointer ${
+                    activeTab === 'routines' 
+                      ? 'bg-teal-500/10 text-teal-400' 
+                      : 'text-app-text hover:bg-app-panel'
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5">
+                    <Activity className="w-4 h-4 text-app-muted" />
+                    <span>Daily Routines</span>
+                  </div>
+                  {routines.filter(r => r.is_active).length > 0 && (
+                    <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-teal-500/10 text-teal-400 border border-teal-500/10">
+                      {routines.filter(r => r.is_active).length}
+                    </span>
+                  )}
+                </button>
+
                 <div className="h-px bg-app-border/50 my-2" />
 
                 <button
@@ -625,27 +811,118 @@ export default function App() {
           <div className="max-w-3xl w-full mx-auto space-y-6 flex-grow flex flex-col">
             
             {/* Ambient Category Header */}
-            <div className="space-y-1">
-              <div className="flex items-center justify-between">
-                <h2 className="font-display font-medium text-2xl tracking-tight text-app-bold">
-                  {activeTab === 'today' && "My Day"}
-                  {activeTab === 'planned' && "Planned Planner"}
-                  {activeTab === 'all' && "All Active Tasks"}
-                  {activeTab === 'completed' && "Completed History"}
-                  {activeTab === 'cancelled' && "Discarded Activity Log"}
-                </h2>
-                <span className="text-xs font-mono text-app-muted">
-                  {filteredTasks.length} {filteredTasks.length === 1 ? 'task' : 'tasks'}
-                </span>
+            {activeTab === 'today' ? (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <h2 className="font-display font-medium text-2xl tracking-tight text-app-bold">
+                      {selectedDate === getLocalTodayDate() ? "My Day" : "Daily Companions"}
+                    </h2>
+                    {selectedDate !== getLocalTodayDate() && (
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-teal-500/10 text-teal-400 border border-teal-500/10 animate-pulse">
+                        Archive View
+                      </span>
+                    )}
+                  </div>
+                  <span className="text-xs font-mono text-app-muted">
+                    {filteredTasks.length} {filteredTasks.length === 1 ? 'task' : 'tasks'}
+                  </span>
+                </div>
+
+                {/* Elegant Sliding Date Switcher Tab System */}
+                <div className="bg-app-card border border-app-border rounded-2xl p-1.5 flex items-center justify-between gap-1 shadow-xs">
+                  {/* Previous Day Chevron */}
+                  <button
+                    type="button"
+                    onClick={() => setSelectedDate(prev => addDaysToDate(prev, -1))}
+                    className="p-2 rounded-xl hover:bg-app-panel text-app-muted hover:text-app-bold transition-all cursor-pointer"
+                    title="Previous Day"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+
+                  {/* 3 Tabs Row */}
+                  <div className="flex-grow grid grid-cols-3 gap-1.5 max-w-md mx-auto">
+                    {/* Left Tab (Selected Date - 1) */}
+                    <button
+                      type="button"
+                      onClick={() => setSelectedDate(prev => addDaysToDate(prev, -1))}
+                      className="px-1 py-2 rounded-xl text-center text-[10px] sm:text-xs font-mono font-semibold text-app-muted/70 hover:text-app-bold hover:bg-app-panel/40 transition-all truncate"
+                    >
+                      {getTabLabel(addDaysToDate(selectedDate, -1))}
+                    </button>
+
+                    {/* Center Tab (Selected Date) - HIGHLIGHTED */}
+                    <button
+                      type="button"
+                      className="px-2 py-2 rounded-xl text-center text-[10px] sm:text-xs font-mono font-bold bg-teal-600 text-slate-900 shadow-sm transition-all truncate"
+                    >
+                      {getTabLabel(selectedDate)}
+                    </button>
+
+                    {/* Right Tab (Selected Date + 1) */}
+                    <button
+                      type="button"
+                      onClick={() => setSelectedDate(prev => addDaysToDate(prev, 1))}
+                      className="px-1 py-2 rounded-xl text-center text-[10px] sm:text-xs font-mono font-semibold text-app-muted/70 hover:text-app-bold hover:bg-app-panel/40 transition-all truncate"
+                    >
+                      {getTabLabel(addDaysToDate(selectedDate, 1))}
+                    </button>
+                  </div>
+
+                  {/* Next Day Chevron */}
+                  <button
+                    type="button"
+                    onClick={() => setSelectedDate(prev => addDaysToDate(prev, 1))}
+                    className="p-2 rounded-xl hover:bg-app-panel text-app-muted hover:text-app-bold transition-all cursor-pointer"
+                    title="Next Day"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
+
+                {/* Pretty string & Back to Today Reset Option */}
+                <div className="flex items-center justify-between text-xs text-app-muted font-sans px-1">
+                  <span>{getFormattedPrettyDate(selectedDate)}</span>
+                  {selectedDate !== getLocalTodayDate() && (
+                    <button
+                      type="button"
+                      onClick={() => setSelectedDate(getLocalTodayDate())}
+                      className="text-teal-400 font-mono hover:underline font-bold transition-all cursor-pointer flex items-center gap-1 text-[11px]"
+                    >
+                      <span>Back to Today</span>
+                      <span className="text-[9px] bg-teal-500/10 px-1 py-0.2 rounded-md">⏎</span>
+                    </button>
+                  )}
+                </div>
               </div>
-              <p className="text-xs text-app-muted font-sans">
-                {activeTab === 'today' && getTodayPrettyLabel()}
-                {activeTab === 'planned' && "Timeline representation of next task deadlines"}
-                {activeTab === 'all' && "Consolidated storage of all current local nodes"}
-                {activeTab === 'completed' && "Checkpoints passed successfully"}
-                {activeTab === 'cancelled' && "Records pulled back or suspended"}
-              </p>
-            </div>
+            ) : (
+              <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <h2 className="font-display font-medium text-2xl tracking-tight text-app-bold">
+                    {activeTab === 'planned' && "Planned Planner"}
+                    {activeTab === 'all' && "All Active Tasks"}
+                    {activeTab === 'completed' && "Completed History"}
+                    {activeTab === 'cancelled' && "Discarded Activity Log"}
+                    {activeTab === 'routines' && "Daily Routines & Reports"}
+                  </h2>
+                  <span className="text-xs font-mono text-app-muted">
+                    {activeTab === 'routines' ? (
+                      `${routines.length} ${routines.length === 1 ? 'routine' : 'routines'}`
+                    ) : (
+                      `${filteredTasks.length} ${filteredTasks.length === 1 ? 'task' : 'tasks'}`
+                    )}
+                  </span>
+                </div>
+                <p className="text-xs text-app-muted font-sans">
+                  {activeTab === 'planned' && "Timeline representation of next task deadlines"}
+                  {activeTab === 'all' && "Consolidated storage of all current local nodes"}
+                  {activeTab === 'completed' && "Checkpoints passed successfully"}
+                  {activeTab === 'cancelled' && "Records pulled back or suspended"}
+                  {activeTab === 'routines' && "Formulate positive habits, skip dynamically, and monitor long-term logs"}
+                </p>
+              </div>
+            )}
 
             {/* Mobile Search bar */}
             <div className="relative w-full sm:hidden">
@@ -766,37 +1043,309 @@ export default function App() {
               </form>
             )}
 
-            {/* List block */}
-            <div className="flex-grow space-y-4">
-              
-              {filteredTasks.length === 0 ? (
-                <div className="bg-app-panel/20 border border-dashed border-app-border rounded-2xl p-12 text-center flex flex-col items-center justify-center gap-4">
-                  <div className="p-3.5 bg-app-card rounded-full border border-app-border">
-                    <CalendarCheck className="w-7 h-7 text-app-muted/50" />
+            {/* Today's Daily Routines Section inside My Day */}
+            {activeTab === 'today' && routines.filter(r => r.is_active).length > 0 && (
+              <div className="space-y-3 bg-app-card/40 border border-app-border/60 p-4 rounded-2xl">
+                <div className="flex items-center justify-between border-b border-app-border/40 pb-2">
+                  <h3 className="text-xs font-mono font-bold uppercase tracking-wider text-teal-400 flex items-center gap-1.5">
+                    <Activity className="w-4 h-4" />
+                    Daily Routines
+                  </h3>
+                  <span className="text-[10px] font-mono text-app-muted">
+                    {routines.filter(r => {
+                      const inst = routineInstances.find(i => i.routine_id === r.id && i.date === selectedDate);
+                      return inst?.status === 'completed';
+                    }).length} / {routines.filter(r => r.is_active).length} Done
+                  </span>
+                </div>
+                
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  {routines.filter(r => r.is_active).map(routine => {
+                    const todayInstance = routineInstances.find(i => i.routine_id === routine.id && i.date === selectedDate);
+                    const status = todayInstance?.status || 'pending';
+                    
+                    return (
+                      <div 
+                        key={routine.id}
+                        className={`p-3 rounded-xl border transition-all flex items-center justify-between gap-3 ${
+                          status === 'completed'
+                            ? 'bg-emerald-500/5 border-emerald-500/20 text-emerald-400/75'
+                            : status === 'skipped'
+                            ? 'bg-app-card/30 border-app-border/40 text-app-muted'
+                            : 'bg-app-card border-app-border hover:border-teal-500/25 text-app-bold'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <button
+                            onClick={() => handleToggleRoutine(routine.id, status, selectedDate)}
+                            className="flex-shrink-0 cursor-pointer focus:outline-none"
+                          >
+                            {status === 'completed' ? (
+                              <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+                            ) : status === 'skipped' ? (
+                              <X className="w-5 h-5 text-app-muted" />
+                            ) : (
+                              <Circle className="w-5 h-5 text-app-muted hover:text-teal-400 transition-colors" />
+                            )}
+                          </button>
+                          <span className={`text-xs font-medium truncate ${status === 'completed' ? 'line-through opacity-70' : ''}`}>
+                            {routine.title}
+                          </span>
+                        </div>
+                        
+                        <div className="flex items-center gap-1.5">
+                          {status !== 'completed' && (
+                            <button
+                              onClick={() => handleSkipRoutine(routine.id, status, selectedDate)}
+                              className={`text-[10px] font-mono font-bold px-2 py-1 rounded-md transition-all cursor-pointer ${
+                                status === 'skipped'
+                                  ? 'bg-teal-500/10 text-teal-400'
+                                  : 'bg-app-panel text-app-muted hover:bg-app-panel-hover'
+                              }`}
+                              title={status === 'skipped' ? "Unskip routine" : "Mark as skipped"}
+                            >
+                              {status === 'skipped' ? "Skipped" : "Skip"}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Main Content Area Conditional on Active Tab */}
+            {activeTab === 'routines' ? (
+              <div className="space-y-6 flex-grow flex flex-col">
+                {/* Creator form & Routine lists */}
+                <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
+                  
+                  {/* LEFT: Quick creator and active routines list */}
+                  <div className="md:col-span-2 space-y-4">
+                    <div className="bg-app-card border border-app-border rounded-2xl p-4 space-y-4">
+                      <h3 className="text-xs font-mono font-bold text-teal-400 uppercase tracking-wider flex items-center gap-2">
+                        <Plus className="w-4 h-4" />
+                        Add Daily Routine
+                      </h3>
+                      <form onSubmit={handleCreateRoutine} className="flex gap-2">
+                        <input
+                          type="text"
+                          required
+                          placeholder="e.g., Workout, Read 10 mins..."
+                          value={newRoutineTitle}
+                          onChange={(e) => setNewRoutineTitle(e.target.value)}
+                          className="flex-grow bg-app-panel border border-app-border rounded-xl px-3 py-2 text-xs text-app-bold focus:outline-none placeholder-app-muted focus:border-teal-500/50"
+                        />
+                        <button
+                          type="submit"
+                          className="bg-teal-600 hover:bg-teal-500 text-slate-900 font-semibold text-xs px-3.5 py-2 rounded-xl transition-all cursor-pointer"
+                        >
+                          Add
+                        </button>
+                      </form>
+                    </div>
+
+                    <div className="bg-app-card border border-app-border rounded-2xl p-4 space-y-3">
+                      <h3 className="text-xs font-mono font-bold text-teal-400 uppercase tracking-wider">
+                        Your Daily Routines ({routines.length})
+                      </h3>
+                      {routines.length === 0 ? (
+                        <p className="text-xs text-app-muted font-sans py-2">No daily routines defined yet. Create one above!</p>
+                      ) : (
+                        <div className="space-y-2 max-h-[300px] overflow-y-auto">
+                          {routines.map(routine => (
+                            <div key={routine.id} className="flex items-center justify-between p-2.5 rounded-xl bg-app-panel/40 border border-app-border text-xs">
+                              <div className="min-w-0">
+                                <p className="font-semibold text-app-bold truncate">{routine.title}</p>
+                                <p className="text-[10px] font-mono text-app-muted">Started: {routine.start_date}</p>
+                              </div>
+                              <button
+                                onClick={() => handleDeleteRoutineId(routine.id)}
+                                className="p-1.5 rounded-lg hover:bg-red-500/10 hover:text-red-400 text-app-muted transition-all cursor-pointer"
+                                title="Delete routine"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </div>
-                  <div>
-                    <h4 className="font-display font-medium text-app-bold text-sm">List is peaceful</h4>
-                    <p className="text-xs text-app-muted max-w-xs mt-1 font-sans">
-                      All nodes are accounted for in this viewpoint. Use the bar above to orchestrate something new.
-                    </p>
+
+                  {/* RIGHT: Combined aggregate overview metrics */}
+                  <div className="md:col-span-3 space-y-4">
+                    <div className="bg-app-card border border-app-border rounded-2xl p-5 space-y-4">
+                      <h3 className="text-xs font-mono font-bold text-teal-400 uppercase tracking-wider flex items-center gap-1.5">
+                        <TrendingUp className="w-4 h-4 text-teal-400" />
+                        Combined Performance Report
+                      </h3>
+                      
+                      <div className="grid grid-cols-3 gap-3">
+                        {/* Weekly combined */}
+                        {(() => {
+                          const stats = calculateRoutineStats(null, 7);
+                          return (
+                            <div className="p-3 bg-app-panel/40 border border-app-border rounded-xl text-center space-y-2">
+                              <span className="text-[10px] font-mono font-bold text-app-muted uppercase">Weekly (7D)</span>
+                              <div className="text-2xl font-bold font-mono text-teal-400">{stats.completedRate}%</div>
+                              <div className="text-[10px] text-app-muted">
+                                {stats.completed}/{stats.total} instances
+                              </div>
+                            </div>
+                          );
+                        })()}
+
+                        {/* Monthly combined */}
+                        {(() => {
+                          const stats = calculateRoutineStats(null, 30);
+                          return (
+                            <div className="p-3 bg-app-panel/40 border border-app-border rounded-xl text-center space-y-2">
+                              <span className="text-[10px] font-mono font-bold text-app-muted uppercase">Monthly (30D)</span>
+                              <div className="text-2xl font-bold font-mono text-teal-400">{stats.completedRate}%</div>
+                              <div className="text-[10px] text-app-muted">
+                                {stats.completed}/{stats.total} instances
+                              </div>
+                            </div>
+                          );
+                        })()}
+
+                        {/* Yearly combined */}
+                        {(() => {
+                          const stats = calculateRoutineStats(null, 365);
+                          return (
+                            <div className="p-3 bg-app-panel/40 border border-app-border rounded-xl text-center space-y-2">
+                              <span className="text-[10px] font-mono font-bold text-app-muted uppercase">Yearly (365D)</span>
+                              <div className="text-2xl font-bold font-mono text-teal-400">{stats.completedRate}%</div>
+                              <div className="text-[10px] text-app-muted">
+                                {stats.completed}/{stats.total} instances
+                              </div>
+                            </div>
+                          );
+                        })()}
+                      </div>
+                      
+                      {/* Detailed Progress breakdown info */}
+                      <div className="p-3.5 bg-teal-500/5 rounded-xl border border-teal-500/10 text-xs leading-relaxed text-app-muted">
+                        Combined routine performance measures your daily execution consistency across all defined items. Skipped slots are registered automatically on day closure.
+                      </div>
+                    </div>
                   </div>
                 </div>
-              ) : (
-                <div className="space-y-2">
-                  {filteredTasks.map(task => (
-                    <TaskItemRow
-                      key={task.id}
-                      task={task}
-                      isSelected={task.id === selectedTaskId}
-                      onClickTitle={() => setSelectedTaskId(task.id === selectedTaskId ? null : task.id)}
-                      onCheck={handleCheckTask}
-                      onDefer={handleDefer}
-                      onDeleteConfirm={handleDeleteConfirm}
-                    />
-                  ))}
+
+                {/* Section for Individual Routine Reports */}
+                <div className="bg-app-card border border-app-border rounded-2xl p-5 space-y-4">
+                  <h3 className="text-xs font-mono font-bold text-teal-400 uppercase tracking-wider flex items-center gap-1.5">
+                    <BarChart2 className="w-4 h-4 text-teal-400" />
+                    Individual Routine Reports
+                  </h3>
+                  
+                  {routines.length === 0 ? (
+                    <p className="text-xs text-app-muted py-2">Create routines above to review detailed analytics breakdown here.</p>
+                  ) : (
+                    <div className="space-y-4 divide-y divide-app-border/40">
+                      {routines.map(routine => {
+                        const weekStats = calculateRoutineStats(routine.id, 7);
+                        const monthStats = calculateRoutineStats(routine.id, 30);
+                        const yearStats = calculateRoutineStats(routine.id, 365);
+                        
+                        return (
+                          <div key={routine.id} className="pt-4 first:pt-0 space-y-3">
+                            <div className="flex items-center justify-between">
+                              <h4 className="text-sm font-semibold text-app-bold">{routine.title}</h4>
+                              <span className="text-[10px] font-mono text-app-muted">Started: {routine.start_date}</span>
+                            </div>
+                            
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                              {/* Weekly breakdown card */}
+                              <div className="p-3 bg-app-panel/30 border border-app-border rounded-xl flex items-center justify-between">
+                                <div>
+                                  <p className="text-[9px] font-mono font-bold text-app-muted uppercase">Weekly (7D)</p>
+                                  <p className="text-xs font-bold text-app-bold mt-1">
+                                    Completed: {weekStats.completed} <span className="text-app-muted font-normal">/ {weekStats.total}</span>
+                                  </p>
+                                  <p className="text-[10px] text-app-muted font-mono">
+                                    Skipped: {weekStats.skipped} | Pending: {weekStats.pending}
+                                  </p>
+                                </div>
+                                <div className="text-right">
+                                  <span className="text-lg font-bold font-mono text-teal-400">{weekStats.completedRate}%</span>
+                                </div>
+                              </div>
+
+                              {/* Monthly breakdown card */}
+                              <div className="p-3 bg-app-panel/30 border border-app-border rounded-xl flex items-center justify-between">
+                                <div>
+                                  <p className="text-[9px] font-mono font-bold text-app-muted uppercase">Monthly (30D)</p>
+                                  <p className="text-xs font-bold text-app-bold mt-1">
+                                    Completed: {monthStats.completed} <span className="text-app-muted font-normal">/ {monthStats.total}</span>
+                                  </p>
+                                  <p className="text-[10px] text-app-muted font-mono">
+                                    Skipped: {monthStats.skipped} | Pending: {monthStats.pending}
+                                  </p>
+                                </div>
+                                <div className="text-right">
+                                  <span className="text-lg font-bold font-mono text-teal-400">{monthStats.completedRate}%</span>
+                                </div>
+                              </div>
+
+                              {/* Yearly breakdown card */}
+                              <div className="p-3 bg-app-panel/30 border border-app-border rounded-xl flex items-center justify-between">
+                                <div>
+                                  <p className="text-[9px] font-mono font-bold text-app-muted uppercase">Yearly (365D)</p>
+                                  <p className="text-xs font-bold text-app-bold mt-1">
+                                    Completed: {yearStats.completed} <span className="text-app-muted font-normal">/ {yearStats.total}</span>
+                                  </p>
+                                  <p className="text-[10px] text-app-muted font-mono">
+                                    Skipped: {yearStats.skipped} | Pending: {yearStats.pending}
+                                  </p>
+                                </div>
+                                <div className="text-right">
+                                  <span className="text-lg font-bold font-mono text-teal-400">{yearStats.completedRate}%</span>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
+              </div>
+            ) : (
+              /* List block */
+              <div className="flex-grow space-y-4">
+                
+                {filteredTasks.length === 0 ? (
+                  <div className="bg-app-panel/20 border border-dashed border-app-border rounded-2xl p-12 text-center flex flex-col items-center justify-center gap-4">
+                    <div className="p-3.5 bg-app-card rounded-full border border-app-border">
+                      <CalendarCheck className="w-7 h-7 text-app-muted/50" />
+                    </div>
+                    <div>
+                      <h4 className="font-display font-medium text-app-bold text-sm">List is peaceful</h4>
+                      <p className="text-xs text-app-muted max-w-xs mt-1 font-sans">
+                        All nodes are accounted for in this viewpoint. Use the bar above to orchestrate something new.
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {filteredTasks.map(task => (
+                      <TaskItemRow
+                        key={task.id}
+                        task={task}
+                        isSelected={task.id === selectedTaskId}
+                        onClickTitle={() => setSelectedTaskId(task.id === selectedTaskId ? null : task.id)}
+                        onCheck={handleCheckTask}
+                        onDefer={handleDefer}
+                        onDeleteConfirm={handleDeleteConfirm}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
           </div>
         </main>
@@ -874,7 +1423,7 @@ export default function App() {
       {/* Aesthetic minimalist footer */}
       <footer className="border-t border-app-border/40 p-4 bg-app-card text-app-muted text-center text-[10px] font-mono leading-relaxed">
         <div className="max-w-7xl mx-auto flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between opacity-80">
-          <p>© 2026 Progressive Offline Task Core. Hard local storage locked.</p>
+          <p>© 2026 Daily. Hard local storage locked.</p>
           <div className="flex gap-3 justify-center">
             <span>Sandboxed IndexedDB</span>
             <span>•</span>

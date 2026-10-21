@@ -1,15 +1,23 @@
 import Dexie, { Table } from 'dexie';
-import { Task, RecurringTemplate, TaskStatus, RecurrenceFrequency } from './types';
+import { Task, RecurringTemplate, TaskStatus, RecurrenceFrequency, Routine, RoutineInstance } from './types';
 
 export class TaskDatabase extends Dexie {
   tasks!: Table<Task, string>;
   recurring_templates!: Table<RecurringTemplate, string>;
+  routines!: Table<Routine, string>;
+  routine_instances!: Table<RoutineInstance, string>;
 
   constructor() {
     super('TaskDatabase');
     this.version(1).stores({
       tasks: 'id, target_date, status, recurring_template_id, created_at',
       recurring_templates: 'id, frequency'
+    });
+    this.version(2).stores({
+      tasks: 'id, target_date, status, recurring_template_id, created_at',
+      recurring_templates: 'id, frequency',
+      routines: 'id, is_active, start_date, created_at',
+      routine_instances: 'id, routine_id, date, status'
     });
   }
 }
@@ -402,3 +410,137 @@ export async function updateTaskStatus(taskId: string, status: TaskStatus): Prom
   }
   return true;
 }
+
+// -------------------------------------------------------------
+// Daily Routines Operations & Utilities
+// -------------------------------------------------------------
+
+/**
+ * Returns a list of date strings (YYYY-MM-DD) between two dates, inclusive.
+ */
+export function getDatesBetween(startDateStr: string, endDateStr: string): string[] {
+  const dates: string[] = [];
+  let current = startDateStr;
+  let iterations = 0;
+  while (current <= endDateStr && iterations < 366) {
+    dates.push(current);
+    current = addDaysToDate(current, 1);
+    iterations++;
+  }
+  return dates;
+}
+
+/**
+ * Creates a new routine definition and registers today's instance.
+ */
+export async function createRoutine(title: string): Promise<Routine> {
+  const now = new Date().toISOString();
+  const id = getSafeUUID();
+  const today = getLocalTodayDate();
+
+  const newRoutine: Routine = {
+    id,
+    title: title.trim(),
+    created_at: now,
+    start_date: today,
+    is_active: true
+  };
+
+  await db.routines.add(newRoutine);
+
+  // Instantly seed a pending instance for today
+  const instanceId = `${id}_${today}`;
+  const instance: RoutineInstance = {
+    id: instanceId,
+    routine_id: id,
+    date: today,
+    status: 'pending',
+    updated_at: now
+  };
+  await db.routine_instances.add(instance);
+
+  return newRoutine;
+}
+
+/**
+ * Sets status of a routine instance for a given date.
+ */
+export async function toggleRoutineInstance(
+  routineId: string,
+  date: string,
+  status: 'completed' | 'skipped' | 'pending'
+): Promise<RoutineInstance> {
+  const instanceId = `${routineId}_${date}`;
+  const existing = await db.routine_instances.get(instanceId);
+  const now = new Date().toISOString();
+
+  if (existing) {
+    await db.routine_instances.update(instanceId, {
+      status,
+      updated_at: now
+    });
+    return { ...existing, status, updated_at: now };
+  } else {
+    const newInstance: RoutineInstance = {
+      id: instanceId,
+      routine_id: routineId,
+      date,
+      status,
+      updated_at: now
+    };
+    await db.routine_instances.add(newInstance);
+    return newInstance;
+  }
+}
+
+/**
+ * Completely removes a routine definition and all its historic logs.
+ */
+export async function deleteRoutine(routineId: string): Promise<void> {
+  await db.routines.delete(routineId);
+  // Delete all historical logs
+  const instances = await db.routine_instances.where('routine_id').equals(routineId).toArray();
+  for (const inst of instances) {
+    await db.routine_instances.delete(inst.id);
+  }
+}
+
+/**
+ * Automatically synchronizes routine status logs for any date gaps:
+ * 1. Backfills any missing active routine instances from start_date to today.
+ *    - Today's missing instance is initialized as 'pending'.
+ *    - Past missing instances are initialized as 'skipped' (since the day has finished).
+ * 2. Transition past 'pending' instances to 'skipped' (day finish expiration).
+ */
+export async function syncRoutinesForDateRange(): Promise<void> {
+  const today = getLocalTodayDate();
+  const allRoutines = await db.routines.toArray();
+  const activeRoutines = allRoutines.filter(r => r.is_active);
+  const now = new Date().toISOString();
+
+  for (const routine of activeRoutines) {
+    const dates = getDatesBetween(routine.start_date, today);
+    for (const date of dates) {
+      const instanceId = `${routine.id}_${date}`;
+      const existing = await db.routine_instances.get(instanceId);
+
+      if (!existing) {
+        const defaultStatus = date === today ? 'pending' : 'skipped';
+        const newInstance: RoutineInstance = {
+          id: instanceId,
+          routine_id: routine.id,
+          date,
+          status: defaultStatus,
+          updated_at: now
+        };
+        await db.routine_instances.add(newInstance);
+      } else if (date < today && existing.status === 'pending') {
+        await db.routine_instances.update(instanceId, {
+          status: 'skipped',
+          updated_at: now
+        });
+      }
+    }
+  }
+}
+

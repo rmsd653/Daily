@@ -1,7 +1,7 @@
 {
-  "name": "Offline Task Manager",
-  "short_name": "Tasks PWA",
-  "description": "Progressive Web App for advanced offline task management, recurring routines, and manual deferrals with automated rollover.",
+  "name": "Daily",
+  "short_name": "Daily",
+  "description": "An elegant offline-first task and routine companion featuring positive habit tracking, automatic rollover, and comprehensive performance analytics.",
   "start_url": "/",
   "display": "standalone",
   "orientation": "portrait",

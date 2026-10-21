@@ -32,3 +32,19 @@ export interface NotificationSchedule {
   triggerTime: number; // UTC timestamp of when it should run
   isFired: boolean;
 }
+
+export interface Routine {
+  id: string; // UUID string
+  title: string; // Routine name (e.g. "Morning Meditation", "Water 3L")
+  created_at: string; // ISO string
+  start_date: string; // YYYY-MM-DD local date
+  is_active: boolean; // defaults to true
+}
+
+export interface RoutineInstance {
+  id: string; // unique ID: `${routine_id}_${date}` to ensure one instance per day per routine
+  routine_id: string; // Foreign key referencing routines.id
+  date: string; // YYYY-MM-DD local date
+  status: 'pending' | 'completed' | 'skipped';
+  updated_at: string; // ISO string
+}
